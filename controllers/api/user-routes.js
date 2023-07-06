@@ -1,10 +1,10 @@
 const router = require("express").Router();
 const { User, Post, Comment, Vote } = require("../../models");
 
-// get all users
+// Get all users
 router.get("/", (req, res) => {
   User.findAll({
-    attributes: { exclude: ["password"] },
+    attributes: { exclude: ["password"] }, // Exclude the password attribute from the returned data
   })
     .then((dbUserData) => res.json(dbUserData))
     .catch((err) => {
@@ -13,9 +13,10 @@ router.get("/", (req, res) => {
     });
 });
 
+// Get a specific user by id
 router.get("/:id", (req, res) => {
   User.findOne({
-    attributes: { exclude: ["password"] },
+    attributes: { exclude: ["password"] }, // Exclude the password attribute from the returned data
     where: {
       id: req.params.id,
     },
@@ -53,19 +54,29 @@ router.get("/:id", (req, res) => {
     });
 });
 
+// Create a new user
 router.post("/", (req, res) => {
   User.create({
     username: req.body.username,
     email: req.body.email,
     password: req.body.password,
   })
-    .then((dbUserData) => res.json(dbUserData))
+    .then((dbUserData) => {
+      req.session.save(() => {
+        req.session.user_id = dbUserData.id;
+        req.session.username = dbUserData.username;
+        req.session.loggedIn = true;
+
+        res.json(dbUserData);
+      });
+    })
     .catch((err) => {
       console.log(err);
       res.status(500).json(err);
     });
 });
 
+// User login
 router.post("/login", (req, res) => {
   User.findOne({
     where: {
@@ -84,10 +95,28 @@ router.post("/login", (req, res) => {
       return;
     }
 
-    res.json({ user: dbUserData, message: "You are now logged in!" });
+    req.session.save(() => {
+      req.session.user_id = dbUserData.id;
+      req.session.username = dbUserData.username;
+      req.session.loggedIn = true;
+
+      res.json({ user: dbUserData, message: "You are now logged in!" });
+    });
   });
 });
 
+// User logout
+router.post("/logout", (req, res) => {
+  if (req.session.loggedIn) {
+    req.session.destroy(() => {
+      res.status(204).end();
+    });
+  } else {
+    res.status(404).end();
+  }
+});
+
+// Update a user by id
 router.put("/:id", (req, res) => {
   User.update(req.body, {
     individualHooks: true,
@@ -96,7 +125,7 @@ router.put("/:id", (req, res) => {
     },
   })
     .then((dbUserData) => {
-      if (!dbUserData[0]) {
+      if (!dbUserData) {
         res.status(404).json({ message: "No user found with this id" });
         return;
       }
@@ -108,6 +137,7 @@ router.put("/:id", (req, res) => {
     });
 });
 
+// Delete a user by id
 router.delete("/:id", (req, res) => {
   User.destroy({
     where: {

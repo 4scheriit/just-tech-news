@@ -1,11 +1,12 @@
 const router = require("express").Router();
 const sequelize = require("../../config/connection");
-const { Post, User, Vote, Comment } = require("../../models");
+const { Post, User, Comment, Vote } = require("../../models");
+const withAuth = require("../../utils/auth");
 
 // Get all posts
 router.get("/", (req, res) => {
   console.log("======================");
-  // Find all posts
+  // Find all posts with associated comments and users
   Post.findAll({
     attributes: [
       "id",
@@ -19,7 +20,6 @@ router.get("/", (req, res) => {
         "vote_count",
       ],
     ],
-    order: [["created_at", "DESC"]],
     include: [
       {
         model: Comment,
@@ -44,7 +44,6 @@ router.get("/", (req, res) => {
 
 // Get a specific post by id
 router.get("/:id", (req, res) => {
-  // Find a post by id
   Post.findOne({
     where: {
       id: req.params.id,
@@ -62,6 +61,14 @@ router.get("/:id", (req, res) => {
       ],
     ],
     include: [
+      {
+        model: Comment,
+        attributes: ["id", "comment_text", "post_id", "user_id", "created_at"],
+        include: {
+          model: User,
+          attributes: ["username"],
+        },
+      },
       {
         model: User,
         attributes: ["username"],
@@ -82,34 +89,38 @@ router.get("/:id", (req, res) => {
 });
 
 // Create a new post
-router.post("/", (req, res) => {
-  // Create a new post with provided data
-  Post.create({
-    title: req.body.title,
-    post_url: req.body.post_url,
-    user_id: req.body.user_id,
-  })
-    .then((dbPostData) => res.json(dbPostData))
-    .catch((err) => {
-      console.log(err);
-      res.status(500).json(err);
-    });
+router.post("/", withAuth, (req, res) => {
+  if (req.session) {
+    Post.create({
+      title: req.body.title,
+      post_url: req.body.post_url,
+      user_id: req.session.user_id,
+    })
+      .then((dbPostData) => res.json(dbPostData))
+      .catch((err) => {
+        console.log(err);
+        res.status(500).json(err);
+      });
+  }
 });
 
 // Upvote a post
-router.put("/upvote", (req, res) => {
-  // Call the custom static method "upvote" defined in models/Post.js
-  Post.upvote(req.body, { Vote })
-    .then((updatedPostData) => res.json(updatedPostData))
-    .catch((err) => {
-      console.log(err);
-      res.status(400).json(err);
-    });
+router.put("/upvote", withAuth, (req, res) => {
+  if (req.session) {
+    Post.upvote(
+      { ...req.body, user_id: req.session.user_id },
+      { Vote, Comment, User }
+    )
+      .then((updatedVoteData) => res.json(updatedVoteData))
+      .catch((err) => {
+        console.log(err);
+        res.status(500).json(err);
+      });
+  }
 });
 
 // Update a post by id
-router.put("/:id", (req, res) => {
-  // Update a post with new title
+router.put("/:id", withAuth, (req, res) => {
   Post.update(
     {
       title: req.body.title,
@@ -134,8 +145,8 @@ router.put("/:id", (req, res) => {
 });
 
 // Delete a post by id
-router.delete("/:id", (req, res) => {
-  // Delete a post with the given id
+router.delete("/:id", withAuth, (req, res) => {
+  console.log("id", req.params.id);
   Post.destroy({
     where: {
       id: req.params.id,
